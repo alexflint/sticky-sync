@@ -6,6 +6,7 @@ import base64
 import httplib
 import StringIO
 import signal
+import argparse
 
 from pyth.plugins.rtf15.reader import Rtf15Reader
 from pyth.plugins.plaintext.writer import PlaintextWriter
@@ -98,20 +99,37 @@ class StickiesListener(object):
         file_events.loop()
 
 def signal_handler(signal, frame):
-    print 'You pressed Ctrl+C!'
     file_events.stop()
 
+DEFAULT_SERVER_HOSTNAME = 'ec2-54-200-19-165.us-west-2.compute.amazonaws.com'
+DEFAULT_SERVER_PORT = 5000
+DEFAULT_STICKIES_PATH = '$HOME/Library/StickiesDatabase'
+
 if __name__ == '__main__':
-    stickies_path = os.path.join(os.getenv('HOME'), 'Library/StickiesDatabase')
+    parser = argparse.ArgumentParser(description='Synchronizes stickies with a server')
+    parser.add_argument('--server-hostname', type=str, default=DEFAULT_SERVER_HOSTNAME,
+                        help='The hostname of the sticky-sync server')
+    parser.add_argument('--server-port', type=int, default=DEFAULT_SERVER_PORT,
+                        help='The port for the sticky-sync server')
+    parser.add_argument('--stickies-path', type=str, default=DEFAULT_STICKIES_PATH,
+                        help='Path to the stickies database')
+    args = parser.parse_args()
+
+    # Resolve the stickies path
+    stickies_path = os.path.expanduser(os.path.expandvars(args.stickies_path))
     if not os.path.exists(stickies_path):
         print 'Could not find stickies database at %s' % stickies_path
 
     # Install ctrl-c handler
     signal.signal(signal.SIGINT, signal_handler)
 
-    USER_ID = 1
-    client = StickiesClient('localhost', 5000, USER_ID)
+    # Create the client
+    user_id = 1  # hard-coded for now
+    client = StickiesClient(args.server_hostname, args.server_port, user_id)
 
+    # Upload immediately
     client.upload(load_stickies(stickies_path))
-    listener = StickiesListener(stickies_path, client)
-    listener.loop()
+
+    # Start listening for filesystem events
+    filesystem_listener = StickiesListener(stickies_path, client)
+    filesystem_listener.loop()
